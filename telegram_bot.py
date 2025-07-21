@@ -214,6 +214,9 @@ class TelegramNotifier:
             await self.session.close()
 
         self.logger.info("Telegram notifier session closed")
+        
+        Fix IndentationError in cleanup method
+
 
 
 
