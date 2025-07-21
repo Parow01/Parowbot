@@ -211,8 +211,7 @@ class TelegramNotifier:
     async def cleanup(self):
         """Clean up resources."""
         if self.session and not self.session.closed:
-            await self.session.close() python-telegram-bot==20.8
-aiohttp
+            await self.session.close()
 
 
             self.logger.info("Telegram notifier session closed")
