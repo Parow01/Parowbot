@@ -212,9 +212,9 @@ class TelegramNotifier:
         """Clean up resources."""
         if self.session and not self.session.closed:
             await self.session.close()
+            
 
-
-            self.logger.info("Telegram notifier session closed")
+         self.logger.info("Telegram notifier session closed")
 Fix syntax error in telegram_bot.py
 
 
