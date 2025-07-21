@@ -216,3 +216,6 @@ aiohttp
 
 
             self.logger.info("Telegram notifier session closed")
+Fix syntax error in telegram_bot.py
+
+
