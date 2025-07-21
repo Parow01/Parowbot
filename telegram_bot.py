@@ -164,7 +164,7 @@ class TelegramNotifier:
             self.logger.error(f"Error sending status update: {e}")
             return False
 
-    async def send_error_alert(self, error_msg: str) -> bool:
+        async def send_error_alert(self, error_msg: str) -> bool:
         """Send an error alert message."""
         try:
             message = f"⚠️ <b>Bot Error Alert</b>\n\n"
@@ -175,9 +175,10 @@ class TelegramNotifier:
             self.logger.error(f"Error sending error alert: {e}")
             return False
 
-  async def cleanup(self):
-    """Clean up resources."""
-    if self.session and not self.session.closed:
-        await self.session.close()
-    self.logger.info("Telegram notifier session closed")
+    async def cleanup(self):
+        """Clean up resources."""
+        if self.session and not self.session.closed:
+            await self.session.close()
+        self.logger.info("Telegram notifier session closed")
+
 
