@@ -175,8 +175,9 @@ class TelegramNotifier:
             self.logger.error(f"Error sending error alert: {e}")
             return False
 
-    async def cleanup(self):
-        """Clean up resources."""
-        if self.session and not self.session.closed:
-            await self.session.close()
-        self.logger.info("Telegram notifier session closed")
+  async def cleanup(self):
+    """Clean up resources."""
+    if self.session and not self.session.closed:
+        await self.session.close()
+    self.logger.info("Telegram notifier session closed")
+
