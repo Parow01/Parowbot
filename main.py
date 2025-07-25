@@ -1,57 +1,79 @@
 import asyncio
 import logging
-from telegram_bot import TelegramNotifier
-from whale_detector import WhaleDetector
-from config import Config
-from keepalive import keep_alive  # optional, if you use it
-import datetime
+import os
+import time
+import sys
+import tracemalloc
+from telegram import Update, Bot
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from whale_detector import monitor_whales  # Your alert engine
+from keepalive import keep_alive  # Optional keepalive web server
+from utils import get_system_status, get_top_alerts_summary  # Utilities you'll define
+from datetime import datetime
 
-class WhaleAlertBot:
-    def __init__(self):
-        self.config = Config()
-        self.logger = logging.getLogger(__name__)
-        self.logger.setLevel(logging.INFO)
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-        self.notifier = TelegramNotifier(self.config)
-        self.detector = WhaleDetector(self.config, self.notifier)
-        self.running = True
-        self.start_time = datetime.datetime.now()
+# Track uptime
+START_TIME = time.time()
+tracemalloc.start()
 
-    async def run_monitoring_loop(self):
-        self.logger.info("Whale monitor started.")
-        while self.running:
-            try:
-                await self.detector.check_whale_activity()
-            except Exception as e:
-                self.logger.error(f"Error in whale monitoring: {e}")
-            await asyncio.sleep(self.config.CHECK_INTERVAL)
+# Load config
+TOKEN = os.getenv("BOT_TOKEN")
+if not TOKEN:
+    logger.error("BOT_TOKEN not found in environment variables.")
+    sys.exit(1)
 
-    async def handle_telegram_commands(self):
-        """Poll Telegram for /start, /status, /summary commands."""
-        last_update_id = None
-        while self.running:
-            try:
-                session = await self.notifier._get_session()
-                url = f"{self.notifier.base_url}/getUpdates"
-                params = {"timeout": 10, "offset": last_update_id + 1 if last_update_id else None}
-                async with session.get(url, params=params) as response:
-                    data = await response.json()
-                    updates = data.get("result", [])
-                    for update in updates:
-                        last_update_id = update["update_id"]
-                        message = update.get("message", {})
-                        if not message:
-                            continue
-                        chat_id = message["chat"]["id"]
-                        text = message.get("text", "")
-                        if str(chat_id) != str(self.config.TELEGRAM_CHAT_ID):
-                            continue  # Only respond to owner's chat
-                        if text == "/start":
-                            await self.notifier.send_message("👋 Welcome to *Parowbot*!\nTracking whales in real time.", parse_mode="Markdown")
-                        elif text == "/status":
-                            uptime = datetime.datetime.now() - self.start_time
-                            formatted = f"{uptime.seconds // 3600}h {(uptime.seconds // 60) % 60}m"
-                            await self.notifier.send_message(f"✅ Bot is live!\nUptime: {formatted}", parse_mode="Markdown")
-                        elif text == "/summary":
-                            await self.notifier.send_message("📊 *Top 3 alerts today:*\n1. BTC 10M in\n2. ETH 5M out\n3. XRP_
+bot = Bot(token=TOKEN)
+application = ApplicationBuilder().token(TOKEN).build()
+
+# === COMMAND HANDLERS ===
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "👋 Hello! I'm Parowalertbot — your whale alert assistant.\n"
+        "Use /summary for top events, or /status to check system status."
+    )
+
+async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    summary_text = get_top_alerts_summary()
+    await update.message.reply_text(summary_text)
+
+async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uptime = time.time() - START_TIME
+    current, peak = tracemalloc.get_traced_memory()
+    ram_used = round(current / (1024 * 1024), 2)
+    ram_peak = round(peak / (1024 * 1024), 2)
+    await update.message.reply_text(
+        f"📊 *Parowbot Status*\n"
+        f"• Uptime: {int(uptime // 3600)}h {int((uptime % 3600) // 60)}m\n"
+        f"• RAM: {ram_used}MB (peak {ram_peak}MB)\n"
+        f"• Active Alerts: ✅\n"
+        f"• Last Check: {datetime.utcnow().strftime('%H:%M UTC')}",
+        parse_mode="Markdown"
+    )
+
+# === STARTUP TASKS ===
+async def main():
+    # Register handlers
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("summary", summary))
+    application.add_handler(CommandHandler("status", status))
+
+    # Start background whale monitoring
+    asyncio.create_task(monitor_whales(bot))
+
+    # Optional: run local keepalive server for Render
+    try:
+        keep_alive()
+    except Exception as e:
+        logger.warning(f"Keepalive server failed: {e}")
+
+    # Run bot
+    await application.run_polling()
+
+# === ENTRY POINT ===
+if __name__ == "__main__":
+    asyncio.run(main())
+
 
