@@ -1,79 +1,77 @@
-import asyncio
 import logging
-import os
 import time
-import sys
-import tracemalloc
-from telegram import Update, Bot
+import os
+import asyncio
+from aiohttp import web
+from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-from whale_detector import monitor_whales  # Your alert engine
-from keepalive import keep_alive  # Optional keepalive web server
-from utils import get_system_status, get_top_alerts_summary  # Utilities you'll define
-from datetime import datetime
+from whale_detector import check_whale_activity
+from utils import get_system_status, get_summary, get_usdt_flow
+from keepalive import keep_alive
+
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+CHAT_ID = os.getenv("CHAT_ID")  # Optional: hardcoded fallback
+ALERT_INTERVAL = 120  # seconds between whale checks
+LAST_ALERT_TIME = 0
 
 # Setup logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
 
-# Track uptime
-START_TIME = time.time()
-tracemalloc.start()
-
-# Load config
-TOKEN = os.getenv("BOT_TOKEN")
-if not TOKEN:
-    logger.error("BOT_TOKEN not found in environment variables.")
-    sys.exit(1)
-
-bot = Bot(token=TOKEN)
-application = ApplicationBuilder().token(TOKEN).build()
-
-# === COMMAND HANDLERS ===
+# Telegram Commands
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "👋 Hello! I'm Parowalertbot — your whale alert assistant.\n"
-        "Use /summary for top events, or /status to check system status."
-    )
-
-async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    summary_text = get_top_alerts_summary()
-    await update.message.reply_text(summary_text)
+    await update.message.reply_text("👋 Welcome to Parowalertbot!\nUse /summary, /status, /usdtflow")
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uptime = time.time() - START_TIME
-    current, peak = tracemalloc.get_traced_memory()
-    ram_used = round(current / (1024 * 1024), 2)
-    ram_peak = round(peak / (1024 * 1024), 2)
-    await update.message.reply_text(
-        f"📊 *Parowbot Status*\n"
-        f"• Uptime: {int(uptime // 3600)}h {int((uptime % 3600) // 60)}m\n"
-        f"• RAM: {ram_used}MB (peak {ram_peak}MB)\n"
-        f"• Active Alerts: ✅\n"
-        f"• Last Check: {datetime.utcnow().strftime('%H:%M UTC')}",
-        parse_mode="Markdown"
-    )
+    status = get_system_status()
+    await update.message.reply_text(status)
 
-# === STARTUP TASKS ===
+async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    summary = get_summary()
+    await update.message.reply_text(summary)
+
+async def usdtflow(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    flow = await get_usdt_flow()
+    await update.message.reply_text(flow)
+
+# Whale Alert Loop
+async def alert_loop(application):
+    global LAST_ALERT_TIME
+    while True:
+        now = time.time()
+        if now - LAST_ALERT_TIME >= ALERT_INTERVAL:
+            try:
+                message = check_whale_activity()
+                if message:
+                    await application.bot.send_message(chat_id=CHAT_ID, text=message)
+                    LAST_ALERT_TIME = now
+            except Exception as e:
+                logging.error(f"Error sending alert: {e}")
+        await asyncio.sleep(10)
+
+# Main app start
 async def main():
-    # Register handlers
+    application = ApplicationBuilder().token(BOT_TOKEN).build()
+
+    # Add command handlers
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("summary", summary))
     application.add_handler(CommandHandler("status", status))
+    application.add_handler(CommandHandler("summary", summary))
+    application.add_handler(CommandHandler("usdtflow", usdtflow))
 
-    # Start background whale monitoring
-    asyncio.create_task(monitor_whales(bot))
+    # Keepalive for Render
+    keep_alive()
 
-    # Optional: run local keepalive server for Render
-    try:
-        keep_alive()
-    except Exception as e:
-        logger.warning(f"Keepalive server failed: {e}")
+    # Start whale alerts
+    asyncio.create_task(alert_loop(application))
 
     # Run bot
     await application.run_polling()
 
-# === ENTRY POINT ===
-if __name__ == "__main__":
+if __name__ == '__main__':
     asyncio.run(main())
+
 
 
