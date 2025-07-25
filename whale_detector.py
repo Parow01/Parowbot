@@ -1,39 +1,35 @@
 import aiohttp
-import datetime
+import logging
 
-WHALE_ALERT_URL = "https://api.whale-alert.io/v1/transactions"
-API_KEY = os.getenv("WHALE_ALERT_API_KEY")  # Put your key in Render environment variables
+WHALE_ALERT_API = "https://api.whale-alert.io/v1/transactions"
+WHALE_ALERT_API_KEY = "your_api_key_here"  # Replace with your real Whale Alert API key
 
-async def fetch_whale_alerts():
-    params = {
-        "api_key": API_KEY,
-        "min_value": 5000000,
-        "start": int(datetime.datetime.now().timestamp()) - 300,
-        "limit": 10,
-    }
+MIN_USD = 5_000_000  # Only alert transfers >= $5M
 
-    async with aiohttp.ClientSession() as session:
-        async with session.get(WHALE_ALERT_URL, params=params) as resp:
-            if resp.status != 200:
-                return []
-            data = await resp.json()
-            return data.get("transactions", [])
+async def fetch_whale_transfers():
+    url = f"{WHALE_ALERT_API}?api_key={WHALE_ALERT_API_KEY}&min_value={MIN_USD}&limit=10"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as response:
+                data = await response.json()
+                return data.get("transactions", [])
+    except Exception as e:
+        logging.error(f"Whale Alert fetch failed: {e}")
+        return []
 
-def format_whale_message(tx):
-    symbol = tx.get("symbol", "crypto")
-    amount = tx.get("amount", 0)
-    from_exchange = tx.get("from", {}).get("owner", "unknown")
-    to_exchange = tx.get("to", {}).get("owner", "unknown")
-    timestamp = datetime.datetime.fromtimestamp(tx.get("timestamp"))
-    direction = "⬅️ *IN* to Exchange" if "exchange" in to_exchange.lower() else "➡️ *OUT* from Exchange"
+async def get_whale_summary():
+    txs = await fetch_whale_transfers()
+    if not txs:
+        return "🐋 No major whale transfers in the last few hours."
 
-    return (
-        f"🐋 *Whale Alert*\n"
-        f"Asset: {symbol.upper()}\n"
-        f"Amount: ${amount:,.2f}\n"
-        f"From: {from_exchange}\n"
-        f"To: {to_exchange}\n"
-        f"Time: {timestamp.strftime('%H:%M UTC')}\n"
-        f"{direction}"
-    )
+    lines = ["🐋 *Whale Transfers > $5M* (recent):\n"]
+    for tx in txs[:3]:  # Show only top 3 for summary
+        amount = f"{tx['amount']:,.0f} {tx['symbol']}"
+        usd = f"${tx['amount_usd']:,.0f}"
+        from_ex = tx['from']['owner'] or "Unknown"
+        to_ex = tx['to']['owner'] or "Unknown"
+        lines.append(f"{usd} ({amount})\n→ *{to_ex}*\n← *{from_ex}*\n")
+
+    return "\n".join(lines)
+
 
