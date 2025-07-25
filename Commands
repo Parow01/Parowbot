@@ -1,0 +1,2 @@
+def handle_start():
+    return "👋 Welcome to Parowalertbot! I'm live and watching the whales 🐋.\nUse /status or /summary for quick insights."
